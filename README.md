@@ -16,6 +16,18 @@ The sidebar panel shows who owes whom, lets you add expenses (split equally, "th
 by percentage, or exact amounts), settle up, and delete entries. If your HA user is linked to a person that
 you mapped to a member, "Paid by" defaults to you.
 
+## Scan a receipt
+
+Tap **📷 Scan receipt** in the panel, take a photo (or pick one), and FundSplit sends it to your Home Assistant
+AI agent via the `ai_task` integration. The total, merchant, date and category are filled into the add-expense
+form so you can check them and tap **Save** (the AI can misread, so nothing is added without your confirmation).
+
+Requirements:
+* An AI provider that supports **AI Task with attachments** (e.g. Google Generative AI, OpenAI, Anthropic, Ollama with a vision model) is set up in HA.
+* A default AI task entity is chosen under **Settings → System → AI tasks**, or pick one under **FundSplit → Configure**.
+* HA has a media folder (the default `/media` or `config/media`). The photo is saved there only for the scan and deleted straight after.
+* The panel must be opened over HTTPS (e.g. Nabu Casa) or in the HA companion app for the phone camera to work.
+
 ## Entities
 
 | Entity | Meaning |

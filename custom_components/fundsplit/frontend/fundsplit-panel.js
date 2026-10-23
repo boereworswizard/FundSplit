@@ -4,7 +4,7 @@ const ZAR = new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR" 
 const rand = (cents) => ZAR.format(cents / 100);
 const todayISO = () => new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, local
 
-const CATEGORIES = ["Groceries", "Rent", "Utilities", "Eating out", "Transport", "Fun", "Home", "Other"];
+const MAX_EDGE = 1600; // px; keeps the upload small without hurting receipt legibility
 
 const STYLE = `
   :host { display: block; background: var(--primary-background-color); color: var(--primary-text-color);
@@ -50,6 +50,9 @@ const STYLE = `
   li .del { background: none; border: none; color: var(--secondary-text-color); cursor: pointer; font-size: 18px; }
   .empty { color: var(--secondary-text-color); text-align: center; padding: 16px 0; }
   .hidden { display: none; }
+  .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .toolbar button, form button.scan { width: 100%; }
+  .scanning { text-align: center; color: var(--secondary-text-color); }
 `;
 
 class FundSplitPanel extends HTMLElement {
@@ -61,6 +64,9 @@ class FundSplitPanel extends HTMLElement {
     this._showForm = false;
     this._busy = false;
     this._unsub = null;
+    this._prefill = null;
+    this._scanning = false;
+    this._skipDraft = false;
   }
 
   set hass(hass) {
@@ -130,13 +136,15 @@ class FundSplitPanel extends HTMLElement {
   _render() {
     const root = this.shadowRoot;
     // Preserve form input while re-rendering on background updates.
-    const draft = this._readDraft();
+    const draft = this._skipDraft ? null : this._readDraft();
+    this._skipDraft = false;
     root.innerHTML = `<style>${STYLE}</style>
       <header>
         ${this._narrow ? '<button id="menu" aria-label="Menu">☰</button>' : ""}
         <h1>FundSplit</h1>
       </header>
-      <main>${this._body()}</main>`;
+      <main>${this._body()}</main>
+      <input type="file" id="file" accept="image/*" class="hidden">`;
     root.getElementById("menu")?.addEventListener("click", () =>
       this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })));
     this._bind(draft);
@@ -164,22 +172,28 @@ class FundSplitPanel extends HTMLElement {
     const stats = `<div class="card stats">${balances}
       <div><span>This month</span><b>${rand(s.month_spend)}</b></div></div>`;
 
+    const scanning = this._scanning ? `<div class="card scanning">📷 Reading receipt…</div>` : "";
     return `${this._error ? `<div class="card error">${this._error}</div>` : ""}
-      ${hero}${stats}${this._form()}${this._activity()}`;
+      ${hero}${stats}${scanning}${this._form()}${this._activity()}`;
   }
 
   _form() {
     if (!this._showForm) {
-      return `<button class="primary" id="add">+ Add expense</button>`;
+      return `<div class="toolbar">
+        <button class="primary" id="add">+ Add expense</button>
+        <button class="primary scan" ${this._scanning ? "disabled" : ""}>📷 Scan receipt</button>
+      </div>`;
     }
     const s = this._state;
     const me = this._currentMemberId();
     const opts = s.members.map((m) => `<option value="${m.id}" ${m.id === me ? "selected" : ""}>${m.name}</option>`).join("");
-    const cats = CATEGORIES.map((c) => `<option>${c}</option>`).join("");
+    const pf = this._prefill || {};
+    const cats = s.categories.map((c) => `<option ${c === pf.category ? "selected" : ""}>${c}</option>`).join("");
     return `<form class="card" id="form">
-      <label>Description<input name="description" required maxlength="80" autofocus></label>
+      <button type="button" class="secondary scan" ${this._scanning ? "disabled" : ""}>📷 Scan receipt</button>
+      <label>Description<input name="description" required maxlength="80" value="${this._esc(pf.description ?? "").replace(/"/g, "&quot;")}" autofocus></label>
       <div class="row">
-        <label>Amount (ZAR)<input name="amount" type="number" inputmode="decimal" step="0.01" min="0.01" required></label>
+        <label>Amount (ZAR)<input name="amount" type="number" inputmode="decimal" step="0.01" min="0.01" value="${pf.amount ?? ""}" required></label>
         <label>Paid by<select name="paid_by">${opts}</select></label>
       </div>
       <div class="row">
@@ -189,7 +203,7 @@ class FundSplitPanel extends HTMLElement {
           <option value="percent">By percentage</option>
           <option value="exact">Exact amounts</option>
         </select></label>
-        <label>Date<input name="date" type="date" value="${todayISO()}"></label>
+        <label>Date<input name="date" type="date" value="${pf.date ?? todayISO()}"></label>
       </div>
       <label id="split-extra" class="hidden"></label>
       <label>Category<select name="category"><option value="">—</option>${cats}</select></label>
@@ -236,7 +250,16 @@ class FundSplitPanel extends HTMLElement {
   _bind(draft) {
     const root = this.shadowRoot;
     root.getElementById("add")?.addEventListener("click", () => { this._showForm = true; this._render(); });
-    root.getElementById("cancel")?.addEventListener("click", () => { this._showForm = false; this._render(); });
+    root.getElementById("cancel")?.addEventListener("click", () => {
+      this._showForm = false; this._prefill = null; this._render();
+    });
+    const file = root.getElementById("file");
+    root.querySelectorAll(".scan").forEach((b) => b.addEventListener("click", () => file.click()));
+    file.addEventListener("change", () => {
+      const picked = file.files[0];
+      file.value = "";
+      if (picked) this._scan(picked);
+    });
     root.getElementById("settle")?.addEventListener("click", () => {
       const pay = this._state.payments[0];
       if (confirm(`Record ${this._name(pay.from)} paying ${this._name(pay.to)} ${rand(pay.amount)}?`)) {
@@ -301,8 +324,40 @@ class FundSplitPanel extends HTMLElement {
       msg.split_mode = "exact";
       msg.split_values = { [payer]: mine / 100, [other]: (total - mine) / 100 };
     }
-    if (await this._call(msg)) this._showForm = false;
+    if (await this._call(msg)) { this._showForm = false; this._prefill = null; }
     this._render();
+  }
+
+  /** Downscale a photo to a JPEG (base64, no data: prefix) so the upload stays small. */
+  async _shrink(file) {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close?.();
+    return canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
+  }
+
+  async _scan(file) {
+    this._scanning = true;
+    this._error = null;
+    this._render();
+    try {
+      const image = await this._shrink(file);
+      const draft = await this._hass.callWS({
+        type: "fundsplit/scan_receipt", image, mime_type: "image/jpeg",
+      });
+      this._prefill = draft;
+      this._showForm = true;
+      this._skipDraft = true; // let the scanned values replace whatever was typed
+    } catch (err) {
+      this._error = err.message || "Couldn't read that receipt";
+    } finally {
+      this._scanning = false;
+      this._render();
+    }
   }
 }
 

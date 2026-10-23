@@ -19,6 +19,17 @@ MODE_PERCENT = "percent"
 MODE_EXACT = "exact"
 SPLIT_MODES = (MODE_EQUAL, MODE_SHARES, MODE_PERCENT, MODE_EXACT)
 
+CATEGORIES = (
+    "Groceries",
+    "Rent",
+    "Utilities",
+    "Eating out",
+    "Transport",
+    "Fun",
+    "Home",
+    "Other",
+)
+
 
 class LedgerError(ValueError):
     """Raised for invalid ledger operations."""
@@ -257,6 +268,7 @@ class Ledger:
         activity.sort(key=lambda a: a["date"], reverse=True)  # stable: keeps order
         return {
             "currency": "ZAR",
+            "categories": list(CATEGORIES),
             "members": self.members,
             "balances": self.balances(),
             "payments": self.simplify(),

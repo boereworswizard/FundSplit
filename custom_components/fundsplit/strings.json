@@ -19,5 +19,16 @@
     "abort": {
       "already_configured": "FundSplit is already set up."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Receipt scanning",
+        "description": "Pick the AI Task entity used to read receipts. Leave empty to use the default one set under Settings \u2192 System \u2192 AI tasks.",
+        "data": {
+          "ai_task_entity": "AI Task entity"
+        }
+      }
+    }
   }
 }

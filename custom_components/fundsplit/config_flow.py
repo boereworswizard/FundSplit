@@ -7,10 +7,17 @@ import uuid
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
+from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_AI_TASK_ENTITY,
     CONF_MEMBERS,
     CONF_NAME_1,
     CONF_NAME_2,
@@ -35,6 +42,11 @@ class FundSplitConfigFlow(ConfigFlow, domain=DOMAIN):
     """Set up the two people who share expenses."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        return FundSplitOptionsFlow()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -71,4 +83,27 @@ class FundSplitConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=self.add_suggested_values_to_schema(SCHEMA, user_input),
             errors=errors,
+        )
+
+
+class FundSplitOptionsFlow(OptionsFlow):
+    """Choose which AI Task entity scans receipts."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_AI_TASK_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="ai_task")
+                )
+            }
+        )
+        return self.async_show_form(
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(
+                schema, self.config_entry.options
+            ),
         )

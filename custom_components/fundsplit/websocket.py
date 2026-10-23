@@ -9,9 +9,10 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
-from .const import DOMAIN
+from .const import CONF_AI_TASK_ENTITY, DOMAIN
 from .ledger import SPLIT_MODES, LedgerError
 from .manager import FundSplitManager
+from .receipt import async_scan_receipt
 
 
 def _manager(hass: HomeAssistant) -> FundSplitManager | None:
@@ -43,6 +44,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_add_expense)
     websocket_api.async_register_command(hass, ws_settle)
     websocket_api.async_register_command(hass, ws_delete)
+    websocket_api.async_register_command(hass, ws_scan_receipt)
 
 
 @websocket_api.websocket_command({vol.Required("type"): "fundsplit/state"})
@@ -111,3 +113,20 @@ async def ws_settle(manager: FundSplitManager, msg: dict[str, Any]) -> Any:
 async def ws_delete(manager: FundSplitManager, msg: dict[str, Any]) -> Any:
     await manager.async_delete(msg["id"])
     return manager.snapshot()
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "fundsplit/scan_receipt",
+        vol.Required("image"): str,
+        vol.Required("mime_type"): str,
+    }
+)
+@websocket_api.async_response
+@_wrap
+async def ws_scan_receipt(manager: FundSplitManager, msg: dict[str, Any]) -> Any:
+    entry = manager.hass.config_entries.async_get_entry(manager.entry_id)
+    entity_id = entry.options.get(CONF_AI_TASK_ENTITY) if entry else None
+    return await async_scan_receipt(
+        manager.hass, msg["image"], msg["mime_type"], entity_id
+    )
