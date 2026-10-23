@@ -14,6 +14,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.loader import async_get_integration
 
 from .const import (
     CONF_MEMBERS,
@@ -139,11 +140,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(FRONTEND_DIR), cache_headers=False)]
     )
+    # The version in the URL makes browsers fetch the new script after an update
+    # instead of running a cached copy against the new backend.
+    version = (await async_get_integration(hass, DOMAIN)).version
     await panel_custom.async_register_panel(
         hass,
         webcomponent_name=PANEL_ELEMENT,
         frontend_url_path=PANEL_URL,
-        module_url=f"{STATIC_URL}/fundsplit-panel.js",
+        module_url=f"{STATIC_URL}/fundsplit-panel.js?v={version}",
         sidebar_title=PANEL_TITLE,
         sidebar_icon=PANEL_ICON,
         require_admin=False,

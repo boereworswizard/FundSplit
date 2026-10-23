@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.1
+- Fixed a stale cached panel script causing "required key not provided at 'item_id'" after updating. The panel URL now includes the version.
+
 ## 0.3.0
 - Added editing: tap ✎ on any expense or settlement to change it. Balances update straight away.
 - New service `fundsplit.update_expense` and event `fundsplit_item_updated`.
