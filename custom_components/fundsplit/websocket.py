@@ -106,12 +106,12 @@ async def ws_settle(manager: FundSplitManager, msg: dict[str, Any]) -> Any:
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "fundsplit/delete", vol.Required("id"): str}
+    {vol.Required("type"): "fundsplit/delete", vol.Required("item_id"): str}
 )
 @websocket_api.async_response
 @_wrap
 async def ws_delete(manager: FundSplitManager, msg: dict[str, Any]) -> Any:
-    await manager.async_delete(msg["id"])
+    await manager.async_delete(msg["item_id"])
     return manager.snapshot()
 
 

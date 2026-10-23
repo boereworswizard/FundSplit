@@ -268,7 +268,7 @@ class FundSplitPanel extends HTMLElement {
     });
     root.querySelectorAll(".del").forEach((btn) =>
       btn.addEventListener("click", () => {
-        if (confirm("Delete this entry?")) this._call({ type: "fundsplit/delete", id: btn.dataset.id });
+        if (confirm("Delete this entry?")) this._call({ type: "fundsplit/delete", item_id: btn.dataset.id });
       }));
 
     const form = root.getElementById("form");

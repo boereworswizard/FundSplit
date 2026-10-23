@@ -21,11 +21,10 @@ SPLIT_MODES = (MODE_EQUAL, MODE_SHARES, MODE_PERCENT, MODE_EXACT)
 
 CATEGORIES = (
     "Groceries",
-    "Rent",
-    "Utilities",
     "Eating out",
     "Transport",
     "Fun",
+    "Cannabis",
     "Home",
     "Other",
 )

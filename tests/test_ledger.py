@@ -143,3 +143,9 @@ def test_roundtrip_persistence(lg):
     lg.add_expense("Milk", 12.5, "a")
     restored = Ledger(lg.members, **lg.to_dict())
     assert restored.balances() == lg.balances()
+
+
+def test_categories():
+    cats = ledger.CATEGORIES
+    assert "Cannabis" in cats
+    assert "Rent" not in cats and "Utilities" not in cats
