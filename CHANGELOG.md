@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.2
+- Added the Pets category.
+
 ## 0.3.1
 - Fixed a stale cached panel script causing "required key not provided at 'item_id'" after updating. The panel URL now includes the version.
 

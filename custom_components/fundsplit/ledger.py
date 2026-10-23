@@ -25,6 +25,7 @@ CATEGORIES = (
     "Transport",
     "Fun",
     "Cannabis",
+    "Pets",
     "Home",
     "Other",
 )

@@ -147,7 +147,7 @@ def test_roundtrip_persistence(lg):
 
 def test_categories():
     cats = ledger.CATEGORIES
-    assert "Cannabis" in cats
+    assert "Cannabis" in cats and "Pets" in cats
     assert "Rent" not in cats and "Utilities" not in cats
 
 
