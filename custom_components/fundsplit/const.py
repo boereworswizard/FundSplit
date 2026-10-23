@@ -26,3 +26,4 @@ STATIC_URL = "/fundsplit_static"
 CONF_AI_TASK_ENTITY = "ai_task_entity"
 MAX_RECEIPT_BYTES = 6 * 1024 * 1024
 RECEIPT_DIR = "fundsplit_receipts"
+EVENT_ITEM_UPDATED = f"{DOMAIN}_item_updated"

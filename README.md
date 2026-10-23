@@ -40,6 +40,7 @@ Requirements:
 
 * `fundsplit.add_expense` - `description`, `amount`, `paid_by`; optional `split_mode` (`equal`, `shares`, `percent`, `exact`), `split_values`, `date`, `category`. `paid_by` accepts a name or person entity id.
 * `fundsplit.settle_up` - no arguments settles the full outstanding balance; or give `from`, `to` and `amount`.
+* `fundsplit.update_expense` - same fields as `add_expense` plus the `id` of the expense to replace.
 * `fundsplit.delete_item` - soft-deletes an expense or settlement by `id`.
 
 Example automation: split the electricity bill 60/40 when a sensor changes:
@@ -56,7 +57,7 @@ data:
 
 ## Events
 
-`fundsplit_expense_added`, `fundsplit_settlement_added`, `fundsplit_item_deleted` - use them for notifications.
+`fundsplit_expense_added`, `fundsplit_settlement_added`, `fundsplit_item_updated`, `fundsplit_item_deleted` - use them for notifications.
 
 ## Development
 

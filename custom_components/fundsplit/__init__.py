@@ -51,6 +51,7 @@ SETTLE_SCHEMA = vol.Schema(
     }
 )
 DELETE_SCHEMA = vol.Schema({vol.Required("id"): cv.string})
+UPDATE_EXPENSE_SCHEMA = ADD_EXPENSE_SCHEMA.extend({vol.Required("id"): cv.string})
 
 
 def get_manager(hass: HomeAssistant) -> FundSplitManager:
@@ -86,6 +87,21 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             )
         )
 
+    async def update_expense(call: ServiceCall) -> None:
+        d = call.data
+        await _run(
+            get_manager(hass).async_update_expense(
+                item_id=d["id"],
+                description=d["description"],
+                amount=d["amount"],
+                paid_by=d["paid_by"],
+                mode=d["split_mode"],
+                values=d.get("split_values"),
+                date=d.get("date"),
+                category=d.get("category"),
+            )
+        )
+
     async def settle_up(call: ServiceCall) -> None:
         d = call.data
         manager = get_manager(hass)
@@ -107,6 +123,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         await _run(get_manager(hass).async_delete(call.data["id"]))
 
     hass.services.async_register(DOMAIN, "add_expense", add_expense, ADD_EXPENSE_SCHEMA)
+    hass.services.async_register(
+        DOMAIN, "update_expense", update_expense, UPDATE_EXPENSE_SCHEMA
+    )
     hass.services.async_register(DOMAIN, "settle_up", settle_up, SETTLE_SCHEMA)
     hass.services.async_register(DOMAIN, "delete_item", delete_item, DELETE_SCHEMA)
     return True

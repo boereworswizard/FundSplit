@@ -50,6 +50,7 @@ const STYLE = `
   li .del { background: none; border: none; color: var(--secondary-text-color); cursor: pointer; font-size: 18px; }
   .empty { color: var(--secondary-text-color); text-align: center; padding: 16px 0; }
   .hidden { display: none; }
+  li .edit { background: none; border: none; color: var(--secondary-text-color); cursor: pointer; font-size: 16px; }
   .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .toolbar button, form button.scan { width: 100%; }
   .scanning { text-align: center; color: var(--secondary-text-color); }
@@ -65,6 +66,7 @@ class FundSplitPanel extends HTMLElement {
     this._busy = false;
     this._unsub = null;
     this._prefill = null;
+    this._editing = null; // { type: "expense" | "settlement", item }
     this._scanning = false;
     this._skipDraft = false;
   }
@@ -82,7 +84,7 @@ class FundSplitPanel extends HTMLElement {
   async _init() {
     await this._load();
     // Refresh whenever anyone (UI, service call, automation) changes the ledger.
-    const names = ["fundsplit_expense_added", "fundsplit_settlement_added", "fundsplit_item_deleted"];
+    const names = ["fundsplit_expense_added", "fundsplit_settlement_added", "fundsplit_item_deleted", "fundsplit_item_updated"];
     const unsubs = await Promise.all(
       names.map((n) => this._hass.connection.subscribeEvents(() => this._load(), n))
     );
@@ -177,7 +179,50 @@ class FundSplitPanel extends HTMLElement {
       ${hero}${stats}${scanning}${this._form()}${this._activity()}`;
   }
 
+  /** Turn a stored expense back into the form's fields. */
+  _editDraft(a) {
+    const payer = a.paid_by;
+    const other = this._state.members.find((m) => m.id !== payer).id;
+    const v = a.split_values || {};
+    const draft = {
+      description: a.description, amount: a.amount / 100, date: a.date,
+      category: a.category, paid_by: payer, split: "equal",
+    };
+    if (a.split_mode === "percent" || a.split_mode === "exact") {
+      draft.split = a.split_mode;
+      draft.payer_value = v[payer];
+    } else if (a.split_mode === "shares" && Number(v[payer] ?? 0) === 0 && Number(v[other] ?? 0) > 0) {
+      draft.split = "other";
+    } else if (a.split_mode !== "equal") {
+      draft.split = "exact";
+      draft.payer_value = a.split[payer] / 100;
+    }
+    return draft;
+  }
+
+  _settlementForm() {
+    const s = this._state;
+    const a = this._editing.item;
+    const opts = (sel) => s.members.map((m) => `<option value="${m.id}" ${m.id === sel ? "selected" : ""}>${m.name}</option>`).join("");
+    return `<form class="card" id="settleform">
+      <h2>Edit settlement</h2>
+      <div class="row">
+        <label>Paid by<select name="from">${opts(a.from)}</select></label>
+        <label>Paid to<select name="to">${opts(a.to)}</select></label>
+      </div>
+      <div class="row">
+        <label>Amount (ZAR)<input name="amount" type="number" inputmode="decimal" step="0.01" min="0.01" value="${a.amount / 100}" required></label>
+        <label>Date<input name="date" type="date" value="${a.date}"></label>
+      </div>
+      <div class="actions">
+        <button type="button" class="secondary" id="cancel">Cancel</button>
+        <button type="submit" class="primary" ${this._busy ? "disabled" : ""}>Save</button>
+      </div>
+    </form>`;
+  }
+
   _form() {
+    if (this._editing?.type === "settlement") return this._settlementForm();
     if (!this._showForm) {
       return `<div class="toolbar">
         <button class="primary" id="add">+ Add expense</button>
@@ -185,11 +230,13 @@ class FundSplitPanel extends HTMLElement {
       </div>`;
     }
     const s = this._state;
-    const me = this._currentMemberId();
-    const opts = s.members.map((m) => `<option value="${m.id}" ${m.id === me ? "selected" : ""}>${m.name}</option>`).join("");
     const pf = this._prefill || {};
+    const me = pf.paid_by ?? this._currentMemberId();
+    const opts = s.members.map((m) => `<option value="${m.id}" ${m.id === me ? "selected" : ""}>${m.name}</option>`).join("");
+    const sel = (v) => (pf.split === v ? "selected" : "");
     const cats = s.categories.map((c) => `<option ${c === pf.category ? "selected" : ""}>${c}</option>`).join("");
     return `<form class="card" id="form">
+      ${this._editing ? "<h2>Edit expense</h2>" : ""}
       <button type="button" class="secondary scan" ${this._scanning ? "disabled" : ""}>📷 Scan receipt</button>
       <label>Description<input name="description" required maxlength="80" value="${this._esc(pf.description ?? "").replace(/"/g, "&quot;")}" autofocus></label>
       <div class="row">
@@ -198,10 +245,10 @@ class FundSplitPanel extends HTMLElement {
       </div>
       <div class="row">
         <label>Split<select name="split">
-          <option value="equal">Equally</option>
-          <option value="other">The other person owes all</option>
-          <option value="percent">By percentage</option>
-          <option value="exact">Exact amounts</option>
+          <option value="equal" ${sel("equal")}>Equally</option>
+          <option value="other" ${sel("other")}>The other person owes all</option>
+          <option value="percent" ${sel("percent")}>By percentage</option>
+          <option value="exact" ${sel("exact")}>Exact amounts</option>
         </select></label>
         <label>Date<input name="date" type="date" value="${pf.date ?? todayISO()}"></label>
       </div>
@@ -222,12 +269,14 @@ class FundSplitPanel extends HTMLElement {
         return `<li><div class="main"><div class="title">💸 ${this._name(a.from)} paid ${this._name(a.to)}</div>
           <div class="meta">${a.date} · Settlement</div></div>
           <div class="amt">${rand(a.amount)}</div>
+          <button class="edit" data-id="${a.id}" title="Edit" aria-label="Edit">✎</button>
           <button class="del" data-id="${a.id}" title="Delete" aria-label="Delete">✕</button></li>`;
       }
       const lent = a.amount - a.split[a.paid_by];
       return `<li><div class="main"><div class="title">${this._esc(a.description)}</div>
         <div class="meta">${a.date} · ${this._name(a.paid_by)} paid${a.category ? " · " + this._esc(a.category) : ""}</div></div>
         <div class="amt">${rand(a.amount)}<small>${this._name(a.paid_by)} lent ${rand(lent)}</small></div>
+        <button class="edit" data-id="${a.id}" title="Edit" aria-label="Edit">✎</button>
         <button class="del" data-id="${a.id}" title="Delete" aria-label="Delete">✕</button></li>`;
     }).join("");
     return `<div class="card"><h2>Activity</h2><ul>${rows}</ul></div>`;
@@ -251,8 +300,19 @@ class FundSplitPanel extends HTMLElement {
     const root = this.shadowRoot;
     root.getElementById("add")?.addEventListener("click", () => { this._showForm = true; this._render(); });
     root.getElementById("cancel")?.addEventListener("click", () => {
-      this._showForm = false; this._prefill = null; this._render();
+      this._showForm = false; this._prefill = null; this._editing = null; this._render();
     });
+    root.querySelectorAll(".edit").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const item = this._state.activity.find((a) => a.id === btn.dataset.id);
+        if (!item) return;
+        this._editing = { type: item.type, item };
+        this._showForm = item.type === "expense";
+        this._prefill = item.type === "expense" ? this._editDraft(item) : null;
+        this._skipDraft = true;
+        this._render();
+        this.shadowRoot.querySelector("form")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }));
     const file = root.getElementById("file");
     root.querySelectorAll(".scan").forEach((b) => b.addEventListener("click", () => file.click()));
     file.addEventListener("change", () => {
@@ -271,6 +331,20 @@ class FundSplitPanel extends HTMLElement {
         if (confirm("Delete this entry?")) this._call({ type: "fundsplit/delete", item_id: btn.dataset.id });
       }));
 
+    const sform = root.getElementById("settleform");
+    if (sform) {
+      sform.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = Object.fromEntries(new FormData(sform).entries());
+        const ok = await this._call({
+          type: "fundsplit/update_settlement", item_id: this._editing.item.id,
+          from: f.from, to: f.to, amount: parseFloat(f.amount), date: f.date || undefined,
+        });
+        if (ok) this._editing = null;
+        this._render();
+      });
+      return;
+    }
     const form = root.getElementById("form");
     if (!form) return;
     if (draft) for (const [k, v] of Object.entries(draft)) if (form.elements[k]) form.elements[k].value = v;
@@ -285,12 +359,14 @@ class FundSplitPanel extends HTMLElement {
     const extra = this.shadowRoot.getElementById("split-extra");
     const mode = form.elements.split.value;
     const payer = this._name(form.elements.paid_by.value);
+    // Only reuse a stored value while the split type is the one it was saved with.
+    const saved = this._prefill?.split === mode ? this._prefill.payer_value : undefined;
     if (mode === "percent") {
       extra.className = "";
-      extra.innerHTML = `${payer}'s share (%)<input name="payer_value" type="number" min="0" max="100" step="0.01" value="50" required>`;
+      extra.innerHTML = `${payer}'s share (%)<input name="payer_value" type="number" min="0" max="100" step="0.01" value="${saved ?? 50}" required>`;
     } else if (mode === "exact") {
       extra.className = "";
-      extra.innerHTML = `${payer}'s own share (ZAR)<input name="payer_value" type="number" min="0" step="0.01" value="0" required>`;
+      extra.innerHTML = `${payer}'s own share (ZAR)<input name="payer_value" type="number" min="0" step="0.01" value="${saved ?? 0}" required>`;
     } else {
       extra.className = "hidden";
       extra.innerHTML = "";
@@ -302,7 +378,8 @@ class FundSplitPanel extends HTMLElement {
     const payer = f.paid_by;
     const other = this._state.members.find((m) => m.id !== payer).id;
     const msg = {
-      type: "fundsplit/add_expense",
+      type: this._editing ? "fundsplit/update_expense" : "fundsplit/add_expense",
+      ...(this._editing ? { item_id: this._editing.item.id } : {}),
       description: f.description,
       amount: parseFloat(f.amount),
       paid_by: payer,
@@ -324,7 +401,7 @@ class FundSplitPanel extends HTMLElement {
       msg.split_mode = "exact";
       msg.split_values = { [payer]: mine / 100, [other]: (total - mine) / 100 };
     }
-    if (await this._call(msg)) { this._showForm = false; this._prefill = null; }
+    if (await this._call(msg)) { this._showForm = false; this._prefill = null; this._editing = null; }
     this._render();
   }
 
@@ -349,7 +426,7 @@ class FundSplitPanel extends HTMLElement {
       const draft = await this._hass.callWS({
         type: "fundsplit/scan_receipt", image, mime_type: "image/jpeg",
       });
-      this._prefill = draft;
+      this._prefill = this._editing ? { ...this._prefill, ...draft } : draft;
       this._showForm = true;
       this._skipDraft = true; // let the scanned values replace whatever was typed
     } catch (err) {

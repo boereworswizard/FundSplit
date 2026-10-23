@@ -11,6 +11,7 @@ from homeassistant.helpers.storage import Store
 from .const import (
     EVENT_EXPENSE_ADDED,
     EVENT_ITEM_DELETED,
+    EVENT_ITEM_UPDATED,
     EVENT_SETTLEMENT_ADDED,
     SIGNAL_UPDATED,
 )
@@ -58,6 +59,18 @@ class FundSplitManager:
             },
         )
         return expense
+
+    async def async_update_expense(self, **kwargs: Any) -> dict[str, Any]:
+        expense = self.ledger.update_expense(**kwargs)
+        await self._async_commit()
+        self.hass.bus.async_fire(EVENT_ITEM_UPDATED, {"id": expense["id"]})
+        return expense
+
+    async def async_update_settlement(self, **kwargs: Any) -> dict[str, Any]:
+        settlement = self.ledger.update_settlement(**kwargs)
+        await self._async_commit()
+        self.hass.bus.async_fire(EVENT_ITEM_UPDATED, {"id": settlement["id"]})
+        return settlement
 
     async def async_add_settlement(self, **kwargs: Any) -> dict[str, Any]:
         settlement = self.ledger.add_settlement(**kwargs)

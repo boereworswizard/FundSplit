@@ -149,15 +149,16 @@ class Ledger:
 
     # -- mutations -------------------------------------------------------
 
-    def add_expense(
+    def _build_expense(
         self,
+        item_id: str,
         description: str,
         amount: Any,
         paid_by: str,
-        mode: str = MODE_EQUAL,
-        values: dict[str, Any] | None = None,
-        date: str | None = None,
-        category: str | None = None,
+        mode: str,
+        values: dict[str, Any] | None,
+        date: str | None,
+        category: str | None,
     ) -> dict[str, Any]:
         cents = to_cents(amount)
         if cents <= 0:
@@ -170,22 +171,63 @@ class Ledger:
             {self.resolve_member(k): v for k, v in values.items()} if values else None
         )
         split = compute_split(cents, self.member_ids, mode, resolved_values)
-        expense = {
-            "id": uuid.uuid4().hex,
+        return {
+            "id": item_id,
             "description": description,
             "amount": cents,
             "paid_by": payer,
             "split": split,
             "split_mode": mode,
+            "split_values": resolved_values,
             "date": _valid_date(date),
             "category": category or None,
             "deleted": False,
         }
+
+    def add_expense(
+        self,
+        description: str,
+        amount: Any,
+        paid_by: str,
+        mode: str = MODE_EQUAL,
+        values: dict[str, Any] | None = None,
+        date: str | None = None,
+        category: str | None = None,
+    ) -> dict[str, Any]:
+        expense = self._build_expense(
+            uuid.uuid4().hex, description, amount, paid_by, mode, values, date, category
+        )
         self.expenses.append(expense)
         return expense
 
-    def add_settlement(
-        self, from_member: str, to_member: str, amount: Any, date: str | None = None
+    def update_expense(
+        self,
+        item_id: str,
+        description: str,
+        amount: Any,
+        paid_by: str,
+        mode: str = MODE_EQUAL,
+        values: dict[str, Any] | None = None,
+        date: str | None = None,
+        category: str | None = None,
+    ) -> dict[str, Any]:
+        """Replace an active expense in place (same id and list position)."""
+        for i, old in enumerate(self.expenses):
+            if old["id"] == item_id and not old["deleted"]:
+                new = self._build_expense(
+                    item_id, description, amount, paid_by, mode, values, date, category
+                )
+                self.expenses[i] = new
+                return new
+        raise LedgerError(f"No active expense with id {item_id!r}")
+
+    def _build_settlement(
+        self,
+        item_id: str,
+        from_member: str,
+        to_member: str,
+        amount: Any,
+        date: str | None,
     ) -> dict[str, Any]:
         cents = to_cents(amount)
         if cents <= 0:
@@ -194,16 +236,38 @@ class Ledger:
         payee = self.resolve_member(to_member)
         if payer == payee:
             raise LedgerError("Cannot settle up with yourself")
-        settlement = {
-            "id": uuid.uuid4().hex,
+        return {
+            "id": item_id,
             "from": payer,
             "to": payee,
             "amount": cents,
             "date": _valid_date(date),
             "deleted": False,
         }
+
+    def add_settlement(
+        self, from_member: str, to_member: str, amount: Any, date: str | None = None
+    ) -> dict[str, Any]:
+        settlement = self._build_settlement(
+            uuid.uuid4().hex, from_member, to_member, amount, date
+        )
         self.settlements.append(settlement)
         return settlement
+
+    def update_settlement(
+        self,
+        item_id: str,
+        from_member: str,
+        to_member: str,
+        amount: Any,
+        date: str | None = None,
+    ) -> dict[str, Any]:
+        for i, old in enumerate(self.settlements):
+            if old["id"] == item_id and not old["deleted"]:
+                new = self._build_settlement(item_id, from_member, to_member, amount, date)
+                self.settlements[i] = new
+                return new
+        raise LedgerError(f"No active settlement with id {item_id!r}")
 
     def delete(self, item_id: str) -> dict[str, Any]:
         """Soft-delete an expense or settlement by id."""

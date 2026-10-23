@@ -149,3 +149,51 @@ def test_categories():
     cats = ledger.CATEGORIES
     assert "Cannabis" in cats
     assert "Rent" not in cats and "Utilities" not in cats
+
+
+def test_update_expense_in_place(lg):
+    first = lg.add_expense("Milk", 100, "a")
+    lg.add_expense("Bread", 40, "s")
+    updated = lg.update_expense(
+        first["id"], "Milk & eggs", 200, "s", "percent", {"a": 25, "s": 75}, date="2024-05-01"
+    )
+    assert updated["id"] == first["id"]
+    assert lg.expenses[0] is updated  # position preserved
+    assert updated["split"] == {"a": 5000, "s": 15000}
+    assert updated["split_values"] == {"a": 25, "s": 75}
+    # s paid 200 (a owes 50) and 40 (a owes 20): s is owed 70
+    assert lg.balances() == {"a": -7000, "s": 7000}
+
+
+def test_update_expense_balances(lg):
+    exp = lg.add_expense("Dinner", 100, "a")
+    assert lg.balances() == {"a": 5000, "s": -5000}
+    lg.update_expense(exp["id"], "Dinner", 300, "s")
+    assert lg.balances() == {"a": -15000, "s": 15000}
+
+
+def test_update_validates_and_keeps_original_on_error(lg):
+    exp = lg.add_expense("Dinner", 100, "a")
+    with pytest.raises(LedgerError):
+        lg.update_expense(exp["id"], "Dinner", 100, "a", "percent", {"a": 10, "s": 10})
+    assert lg.expenses[0]["amount"] == 10000
+    assert lg.balances() == {"a": 5000, "s": -5000}
+
+
+def test_update_missing_or_deleted_raises(lg):
+    exp = lg.add_expense("Dinner", 100, "a")
+    lg.delete(exp["id"])
+    with pytest.raises(LedgerError):
+        lg.update_expense(exp["id"], "Dinner", 100, "a")
+    with pytest.raises(LedgerError):
+        lg.update_expense("nope", "Dinner", 100, "a")
+
+
+def test_update_settlement(lg):
+    lg.add_expense("Groceries", 100, "a")
+    st = lg.add_settlement("s", "a", 10)
+    lg.update_settlement(st["id"], "s", "a", 50, date="2024-01-02")
+    assert lg.balances() == {"a": 0, "s": 0}
+    assert lg.settlements[0]["date"] == "2024-01-02"
+    with pytest.raises(LedgerError):
+        lg.update_settlement(st["id"], "a", "a", 5)
