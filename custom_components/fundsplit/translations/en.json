@@ -1,0 +1,23 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Who is sharing expenses?",
+        "description": "FundSplit tracks shared expenses between two people in South African rand (ZAR).",
+        "data": {
+          "name_1": "First person's name",
+          "person_1": "First person (optional HA person)",
+          "name_2": "Second person's name",
+          "person_2": "Second person (optional HA person)"
+        }
+      }
+    },
+    "error": {
+      "name_required": "Both names are required.",
+      "same_name": "The two names must be different."
+    },
+    "abort": {
+      "already_configured": "FundSplit is already set up."
+    }
+  }
+}

@@ -1,0 +1,62 @@
+add_expense:
+  fields:
+    description:
+      required: true
+      example: Groceries
+      selector:
+        text:
+    amount:
+      required: true
+      example: 249.90
+      selector:
+        number:
+          min: 0.01
+          step: 0.01
+          unit_of_measurement: ZAR
+          mode: box
+    paid_by:
+      required: true
+      example: Alex
+      selector:
+        text:
+    split_mode:
+      default: equal
+      selector:
+        select:
+          options: [equal, shares, percent, exact]
+    split_values:
+      example: '{"Alex": 60, "Sam": 40}'
+      selector:
+        object:
+    date:
+      selector:
+        date:
+    category:
+      selector:
+        text:
+settle_up:
+  fields:
+    from:
+      example: Sam
+      selector:
+        text:
+    to:
+      example: Alex
+      selector:
+        text:
+    amount:
+      selector:
+        number:
+          min: 0.01
+          step: 0.01
+          unit_of_measurement: ZAR
+          mode: box
+    date:
+      selector:
+        date:
+delete_item:
+  fields:
+    id:
+      required: true
+      selector:
+        text:
