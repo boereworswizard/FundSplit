@@ -7,15 +7,16 @@ const todayISO = () => new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, lo
 const MAX_EDGE = 1600; // px; keeps the upload small without hurting receipt legibility
 
 const STYLE = `
-  :host { display: block; background: var(--primary-background-color); color: var(--primary-text-color);
+  :host { display: block; overflow-x: hidden; background: var(--primary-background-color); color: var(--primary-text-color);
           min-height: 100vh; font-family: var(--paper-font-body1_-_font-family, Roboto, sans-serif); }
   header { display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 16px;
            background: var(--app-header-background-color, var(--primary-color));
            color: var(--app-header-text-color, #fff); position: sticky; top: 0; z-index: 2; }
   header h1 { font-size: 20px; font-weight: 400; margin: 0; flex: 1; }
   header button { background: none; border: none; color: inherit; font-size: 24px; cursor: pointer; }
-  main { max-width: 720px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
-  .card { background: var(--card-background-color); border-radius: var(--ha-card-border-radius, 12px);
+  main { max-width: 720px; margin: 0 auto; padding: 16px; display: grid; gap: 16px;
+         grid-template-columns: minmax(0, 1fr); box-sizing: border-box; }
+  .card { min-width: 0; box-sizing: border-box; overflow-wrap: anywhere; background: var(--card-background-color); border-radius: var(--ha-card-border-radius, 12px);
           box-shadow: var(--ha-card-box-shadow, 0 1px 3px rgba(0,0,0,.2)); padding: 16px; }
   .hero { text-align: center; }
   .hero .big { font-size: 32px; font-weight: 500; margin: 4px 0 12px; }
@@ -32,9 +33,9 @@ const STYLE = `
   button:disabled { opacity: .5; cursor: default; }
   form { display: grid; gap: 12px; }
   label { display: grid; gap: 4px; font-size: 12px; color: var(--secondary-text-color); }
-  input, select { font: inherit; font-size: 16px; padding: 10px; border-radius: 8px; color: var(--primary-text-color);
+  input, select { min-width: 0; max-width: 100%; box-sizing: border-box; font: inherit; font-size: 16px; padding: 10px; border-radius: 8px; color: var(--primary-text-color);
           border: 1px solid var(--divider-color); background: var(--secondary-background-color); }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
   .actions { display: flex; justify-content: flex-end; gap: 8px; }
   .error { color: var(--error-color, #db4437); font-size: 14px; }
   h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .5px; color: var(--secondary-text-color);
@@ -42,16 +43,17 @@ const STYLE = `
   ul { list-style: none; margin: 0; padding: 0; }
   li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--divider-color); }
   li:first-child { border-top: none; }
-  li .main { flex: 1; min-width: 0; }
-  li .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  li .main { flex: 1 1 0; min-width: 40%; }
+  li .title { overflow-wrap: anywhere; }
   li .meta { color: var(--secondary-text-color); font-size: 12px; }
-  li .amt { text-align: right; white-space: nowrap; }
+  li .amt { text-align: right; flex: 0 1 auto; max-width: 42%; }
+  li .amt .v { white-space: nowrap; }
   li .amt small { display: block; color: var(--secondary-text-color); font-size: 12px; }
   li .del { background: none; border: none; color: var(--secondary-text-color); cursor: pointer; font-size: 18px; }
   .empty { color: var(--secondary-text-color); text-align: center; padding: 16px 0; }
   .hidden { display: none; }
   li .edit { background: none; border: none; color: var(--secondary-text-color); cursor: pointer; font-size: 16px; }
-  .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .toolbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
   .toolbar button, form button.scan { width: 100%; }
   .scanning { text-align: center; color: var(--secondary-text-color); }
 `;
@@ -268,14 +270,14 @@ class FundSplitPanel extends HTMLElement {
       if (a.type === "settlement") {
         return `<li><div class="main"><div class="title">💸 ${this._name(a.from)} paid ${this._name(a.to)}</div>
           <div class="meta">${a.date} · Settlement</div></div>
-          <div class="amt">${rand(a.amount)}</div>
+          <div class="amt"><span class="v">${rand(a.amount)}</span></div>
           <button class="edit" data-id="${a.id}" title="Edit" aria-label="Edit">✎</button>
           <button class="del" data-id="${a.id}" title="Delete" aria-label="Delete">✕</button></li>`;
       }
       const lent = a.amount - a.split[a.paid_by];
       return `<li><div class="main"><div class="title">${this._esc(a.description)}</div>
         <div class="meta">${a.date} · ${this._name(a.paid_by)} paid${a.category ? " · " + this._esc(a.category) : ""}</div></div>
-        <div class="amt">${rand(a.amount)}<small>${this._name(a.paid_by)} lent ${rand(lent)}</small></div>
+        <div class="amt"><span class="v">${rand(a.amount)}</span><small>${this._name(a.paid_by)} lent ${rand(lent)}</small></div>
         <button class="edit" data-id="${a.id}" title="Edit" aria-label="Edit">✎</button>
         <button class="del" data-id="${a.id}" title="Delete" aria-label="Delete">✕</button></li>`;
     }).join("");

@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.3
+- Fixed the page scrolling sideways on mobile when a description is long; long text now wraps.
+
 ## 0.3.2
 - Added the Pets category.
 
