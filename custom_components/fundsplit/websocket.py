@@ -29,7 +29,8 @@ def _wrap(handler):
             connection.send_error(msg["id"], "not_ready", "FundSplit is not set up")
             return
         try:
-            result = await handler(manager, msg)
+            actor = await manager.async_actor_name(connection.user.id)
+            result = await handler(manager, {**msg, "_actor": actor})
         except LedgerError as err:
             connection.send_error(msg["id"], "invalid", str(err))
             return
@@ -72,6 +73,7 @@ async def ws_state(manager: FundSplitManager, msg: dict[str, Any]) -> Any:
 @_wrap
 async def ws_add_expense(manager: FundSplitManager, msg: dict[str, Any]) -> Any:
     await manager.async_add_expense(
+        created_by=msg["_actor"],
         description=msg["description"],
         amount=msg["amount"],
         paid_by=msg["paid_by"],
@@ -101,9 +103,10 @@ async def ws_settle(manager: FundSplitManager, msg: dict[str, Any]) -> Any:
             to_member=msg["to"],
             amount=msg["amount"],
             date=msg.get("date"),
+            created_by=msg["_actor"],
         )
     else:
-        await manager.async_settle_all()
+        await manager.async_settle_all(created_by=msg["_actor"])
     return manager.snapshot()
 
 

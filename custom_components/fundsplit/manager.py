@@ -7,6 +7,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
 from .const import (
     EVENT_EXPENSE_ADDED,
@@ -16,6 +17,11 @@ from .const import (
     SIGNAL_UPDATED,
 )
 from .ledger import Ledger, LedgerError
+
+
+def _today():
+    """Today's date in Home Assistant's configured timezone."""
+    return dt_util.now().date()
 
 
 class FundSplitManager:
@@ -28,7 +34,7 @@ class FundSplitManager:
         self.entry_id = entry_id
         self._members = members
         self._store: Store = Store(hass, 1, f"fundsplit.{entry_id}")
-        self.ledger = Ledger(members)
+        self.ledger = Ledger(members, today=_today)
 
     async def async_load(self) -> None:
         data = await self._store.async_load() or {}
@@ -36,6 +42,7 @@ class FundSplitManager:
             self._members,
             data.get("expenses", []),
             data.get("settlements", []),
+            today=_today,
         )
 
     async def _async_commit(self) -> None:
@@ -44,6 +51,19 @@ class FundSplitManager:
 
     def snapshot(self) -> dict[str, Any]:
         return self.ledger.snapshot()
+
+    async def async_actor_name(self, user_id: str | None) -> str | None:
+        """Name to tag new entries with: the member linked to the user, else the HA user."""
+        if not user_id:
+            return "Automation"
+        for state in self.hass.states.async_all("person"):
+            if state.attributes.get("user_id") != user_id:
+                continue
+            for member in self._members:
+                if member.get("person") == state.entity_id:
+                    return member["name"]
+        user = await self.hass.auth.async_get_user(user_id)
+        return user.name if user else None
 
     async def async_add_expense(self, **kwargs: Any) -> dict[str, Any]:
         expense = self.ledger.add_expense(**kwargs)
@@ -86,14 +106,17 @@ class FundSplitManager:
         )
         return settlement
 
-    async def async_settle_all(self) -> dict[str, Any]:
+    async def async_settle_all(self, created_by: str | None = None) -> dict[str, Any]:
         """Record a settlement for the full outstanding balance."""
         payments = self.ledger.simplify()
         if not payments:
             raise LedgerError("Nothing to settle: balances are already even")
         pay = payments[0]
         return await self.async_add_settlement(
-            from_member=pay["from"], to_member=pay["to"], amount=pay["amount"] / 100
+            from_member=pay["from"],
+            to_member=pay["to"],
+            amount=pay["amount"] / 100,
+            created_by=created_by,
         )
 
     async def async_delete(self, item_id: str) -> None:

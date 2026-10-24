@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
@@ -129,5 +128,5 @@ class MonthSpendSensor(_Base):
 
     @property
     def native_value(self) -> float:
-        month = date.today().strftime("%Y-%m")
+        month = self._manager.ledger._today().strftime("%Y-%m")  # noqa: SLF001
         return self._manager.ledger.total_spend(month) / 100

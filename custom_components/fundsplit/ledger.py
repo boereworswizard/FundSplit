@@ -7,6 +7,7 @@ means the member owes money.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date as date_cls
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from fractions import Fraction
@@ -18,6 +19,8 @@ MODE_SHARES = "shares"
 MODE_PERCENT = "percent"
 MODE_EXACT = "exact"
 SPLIT_MODES = (MODE_EQUAL, MODE_SHARES, MODE_PERCENT, MODE_EXACT)
+
+UNCATEGORISED = "Uncategorised"
 
 CATEGORIES = (
     "Groceries",
@@ -120,12 +123,15 @@ class Ledger:
         members: list[dict[str, Any]],
         expenses: list[dict[str, Any]] | None = None,
         settlements: list[dict[str, Any]] | None = None,
+        today: Callable[[], date_cls] | None = None,
     ) -> None:
         if len(members) < 2:
             raise LedgerError("A ledger needs at least two members")
         self.members = members
         self.expenses = expenses if expenses is not None else []
         self.settlements = settlements if settlements is not None else []
+        # Injectable so Home Assistant's configured timezone decides "today".
+        self._today = today or date_cls.today
 
     # -- members ---------------------------------------------------------
 
@@ -160,6 +166,7 @@ class Ledger:
         values: dict[str, Any] | None,
         date: str | None,
         category: str | None,
+        created_by: str | None = None,
     ) -> dict[str, Any]:
         cents = to_cents(amount)
         if cents <= 0:
@@ -180,8 +187,9 @@ class Ledger:
             "split": split,
             "split_mode": mode,
             "split_values": resolved_values,
-            "date": _valid_date(date),
+            "date": _valid_date(date, self._today()),
             "category": category or None,
+            "created_by": created_by,
             "deleted": False,
         }
 
@@ -194,9 +202,18 @@ class Ledger:
         values: dict[str, Any] | None = None,
         date: str | None = None,
         category: str | None = None,
+        created_by: str | None = None,
     ) -> dict[str, Any]:
         expense = self._build_expense(
-            uuid.uuid4().hex, description, amount, paid_by, mode, values, date, category
+            uuid.uuid4().hex,
+            description,
+            amount,
+            paid_by,
+            mode,
+            values,
+            date,
+            category,
+            created_by,
         )
         self.expenses.append(expense)
         return expense
@@ -216,7 +233,15 @@ class Ledger:
         for i, old in enumerate(self.expenses):
             if old["id"] == item_id and not old["deleted"]:
                 new = self._build_expense(
-                    item_id, description, amount, paid_by, mode, values, date, category
+                    item_id,
+                    description,
+                    amount,
+                    paid_by,
+                    mode,
+                    values,
+                    date,
+                    category,
+                    old.get("created_by"),  # editing never changes who added it
                 )
                 self.expenses[i] = new
                 return new
@@ -229,6 +254,7 @@ class Ledger:
         to_member: str,
         amount: Any,
         date: str | None,
+        created_by: str | None = None,
     ) -> dict[str, Any]:
         cents = to_cents(amount)
         if cents <= 0:
@@ -242,15 +268,21 @@ class Ledger:
             "from": payer,
             "to": payee,
             "amount": cents,
-            "date": _valid_date(date),
+            "date": _valid_date(date, self._today()),
+            "created_by": created_by,
             "deleted": False,
         }
 
     def add_settlement(
-        self, from_member: str, to_member: str, amount: Any, date: str | None = None
+        self,
+        from_member: str,
+        to_member: str,
+        amount: Any,
+        date: str | None = None,
+        created_by: str | None = None,
     ) -> dict[str, Any]:
         settlement = self._build_settlement(
-            uuid.uuid4().hex, from_member, to_member, amount, date
+            uuid.uuid4().hex, from_member, to_member, amount, date, created_by
         )
         self.settlements.append(settlement)
         return settlement
@@ -265,7 +297,9 @@ class Ledger:
     ) -> dict[str, Any]:
         for i, old in enumerate(self.settlements):
             if old["id"] == item_id and not old["deleted"]:
-                new = self._build_settlement(item_id, from_member, to_member, amount, date)
+                new = self._build_settlement(
+                    item_id, from_member, to_member, amount, date, old.get("created_by")
+                )
                 self.settlements[i] = new
                 return new
         raise LedgerError(f"No active settlement with id {item_id!r}")
@@ -323,9 +357,45 @@ class Ledger:
             if not e["deleted"] and (month is None or e["date"].startswith(month))
         )
 
+    def insights(self, months: int = 12) -> list[dict[str, Any]]:
+        """Per-month spending buckets, oldest first, ending at the current month.
+
+        Months with no spending are still present so charts have a steady axis.
+        Settlements are transfers, not spending, so they are excluded. ``paid`` is
+        what each member handed over; ``share`` is what each member's part of the
+        costs came to. Comparing the two shows who is carrying the household.
+        """
+        today = self._today()
+        keys = _month_keys(today, months)
+        buckets: dict[str, dict[str, Any]] = {
+            key: {
+                "month": key,
+                "total": 0,
+                "count": 0,
+                "by_category": {},
+                "paid": dict.fromkeys(self.member_ids, 0),
+                "share": dict.fromkeys(self.member_ids, 0),
+            }
+            for key in keys
+        }
+        for exp in self.expenses:
+            bucket = buckets.get(exp["date"][:7])
+            if exp["deleted"] or bucket is None:
+                continue
+            bucket["total"] += exp["amount"]
+            bucket["count"] += 1
+            category = exp.get("category") or UNCATEGORISED
+            bucket["by_category"][category] = (
+                bucket["by_category"].get(category, 0) + exp["amount"]
+            )
+            bucket["paid"][exp["paid_by"]] += exp["amount"]
+            for member, owed in exp["split"].items():
+                bucket["share"][member] += owed
+        return [buckets[key] for key in keys]
+
     def snapshot(self) -> dict[str, Any]:
         """JSON-serialisable view used by the websocket API and the panel."""
-        current_month = date_cls.today().strftime("%Y-%m")
+        current_month = self._today().strftime("%Y-%m")
         activity = [
             {**e, "type": "expense"} for e in self.expenses if not e["deleted"]
         ] + [{**s, "type": "settlement"} for s in self.settlements if not s["deleted"]]
@@ -339,6 +409,7 @@ class Ledger:
             "total_spend": self.total_spend(),
             "month_spend": self.total_spend(current_month),
             "activity": activity,
+            "insights": self.insights(),
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -346,9 +417,21 @@ class Ledger:
         return {"expenses": self.expenses, "settlements": self.settlements}
 
 
-def _valid_date(value: str | None) -> str:
+def _month_keys(today: date_cls, months: int) -> list[str]:
+    """``YYYY-MM`` keys for the ``months`` months ending at ``today``'s month."""
+    year, month = today.year, today.month
+    keys = []
+    for _ in range(months):
+        keys.append(f"{year:04d}-{month:02d}")
+        month -= 1
+        if month == 0:
+            year, month = year - 1, 12
+    return keys[::-1]
+
+
+def _valid_date(value: str | None, today: date_cls) -> str:
     if not value:
-        return date_cls.today().isoformat()
+        return today.isoformat()
     try:
         return date_cls.fromisoformat(str(value)).isoformat()
     except ValueError as err:

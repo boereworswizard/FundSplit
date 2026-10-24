@@ -56,7 +56,69 @@ const STYLE = `
   .toolbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
   .toolbar button, form button.scan { width: 100%; }
   .scanning { text-align: center; color: var(--secondary-text-color); }
+  .tag { display: block; width: fit-content; margin-top: 2px; padding: 0 8px; border-radius: 10px; font-size: 11px;
+         border: 1px solid var(--divider-color); color: var(--secondary-text-color); white-space: nowrap; }
+
+  /* Chart colours (validated: palette checks pass in light and dark). */
+  :host { --fs-bar: #2a78d6; --fs-bar-dim: rgba(42,120,214,.28); --fs-p1: #eb6834; --fs-p2: #6250d6; }
+  :host([dark]) { --fs-bar: #3987e5; --fs-bar-dim: rgba(57,135,229,.30); --fs-p1: #d95926; --fs-p2: #9085e9; }
+
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 22px;
+          background: var(--secondary-background-color); }
+  .tabs button { border: none; border-radius: 18px; padding: 8px; font: inherit; font-size: 14px; font-weight: 500;
+          cursor: pointer; background: transparent; color: var(--secondary-text-color); }
+  .tabs button[aria-selected="true"] { background: var(--card-background-color); color: var(--primary-text-color);
+          box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .monthnav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .monthnav b { font-size: 16px; font-weight: 500; }
+  .monthnav button { width: 40px; height: 40px; border-radius: 20px; border: none; font-size: 20px; cursor: pointer;
+          background: var(--secondary-background-color); color: var(--primary-text-color); }
+  .monthnav button:disabled { opacity: .35; cursor: default; }
+  .delta { color: var(--secondary-text-color); font-size: 14px; }
+  .legend { display: grid; gap: 6px; margin-bottom: 12px; }
+  .legend .item { display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px; align-items: baseline; font-size: 14px; }
+  .legend .item small { color: var(--secondary-text-color); font-size: 12px; text-align: right; }
+  .dot { width: 10px; height: 10px; border-radius: 5px; display: inline-block; align-self: center; }
+  .stackrow { margin-top: 12px; }
+  .stackrow .lab { font-size: 12px; color: var(--secondary-text-color); margin-bottom: 4px; }
+  .stack { display: flex; gap: 2px; height: 20px; border-radius: 4px; overflow: hidden; }
+  .stack .seg { min-width: 2px; }
+  .stack.none { background: var(--secondary-background-color); }
+  .note { margin: 12px 0 0; font-size: 14px; color: var(--secondary-text-color); }
+  .cats { display: grid; gap: 12px; }
+  .cat { display: grid; gap: 4px; padding: 2px 0; }
+  .cat .top { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+  .cat .top small { color: var(--secondary-text-color); font-size: 12px; }
+  .cat .track { height: 20px; }
+  .cat .fill { height: 100%; min-width: 2px; background: var(--fs-bar); border-radius: 0 4px 4px 0; }
+  .cat:hover .fill, .cat:focus-visible .fill { filter: brightness(1.12); }
+  .chart { display: flex; align-items: flex-end; gap: 2px; height: 140px; border-bottom: 1px solid var(--divider-color); }
+  .col { flex: 1 1 0; min-width: 0; height: 100%; display: flex; align-items: flex-end; justify-content: center;
+         background: none; border: none; padding: 0; cursor: pointer; position: relative; }
+  .col .bar { width: 100%; max-width: 24px; background: var(--fs-bar-dim); border-radius: 4px 4px 0 0; min-height: 0; }
+  .col[aria-pressed="true"] .bar { background: var(--fs-bar); }
+  .col:hover .bar, .col:focus-visible .bar { background: var(--fs-bar); filter: brightness(1.05); }
+  .col .cap { position: absolute; font-size: 11px; font-weight: 500; white-space: nowrap; color: var(--primary-text-color); }
+  .col .cap.c { left: 50%; transform: translateX(-50%); }
+  .col .cap.l { left: 0; } .col .cap.r { right: 0; }
+  .xlabels { display: flex; gap: 2px; margin-top: 4px; }
+  .xlabels span { flex: 1 1 0; min-width: 0; text-align: center; font-size: 10px; color: var(--secondary-text-color); }
+  details { margin-top: 4px; }
+  summary { cursor: pointer; font-size: 14px; color: var(--primary-color); }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+  th, td { padding: 6px 4px; border-top: 1px solid var(--divider-color); }
+  th { text-align: left; font-weight: 500; color: var(--secondary-text-color); }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+  .tip { position: fixed; z-index: 10; pointer-events: none; padding: 6px 10px; border-radius: 8px; font-size: 12px;
+         background: var(--primary-text-color); color: var(--card-background-color); max-width: 220px; }
+  .tip b { display: block; font-size: 14px; }
 `;
+
+const monthName = (key, style = "long") => {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("en-ZA", style === "long" ? { month: "long", year: "numeric" } : { month: "short" });
+};
+const pct = (part, whole) => (whole ? Math.round((part / whole) * 100) : 0);
 
 class FundSplitPanel extends HTMLElement {
   constructor() {
@@ -71,11 +133,14 @@ class FundSplitPanel extends HTMLElement {
     this._editing = null; // { type: "expense" | "settlement", item }
     this._scanning = false;
     this._skipDraft = false;
+    this._tab = "overview"; // "overview" | "insights"
+    this._month = null; // selected insights month (YYYY-MM); null = current
   }
 
   set hass(hass) {
     const first = !this._hass;
     this._hass = hass;
+    this.toggleAttribute("dark", !!hass.themes?.darkMode);
     if (first) this._init();
   }
 
@@ -177,8 +242,13 @@ class FundSplitPanel extends HTMLElement {
       <div><span>This month</span><b>${rand(s.month_spend)}</b></div></div>`;
 
     const scanning = this._scanning ? `<div class="card scanning">📷 Reading receipt…</div>` : "";
-    return `${this._error ? `<div class="card error">${this._error}</div>` : ""}
-      ${hero}${stats}${scanning}${this._form()}${this._activity()}`;
+    const tabs = `<div class="tabs" role="tablist">
+      <button role="tab" data-tab="overview" aria-selected="${this._tab === "overview"}">Overview</button>
+      <button role="tab" data-tab="insights" aria-selected="${this._tab === "insights"}">Insights</button>
+    </div>`;
+    const err = this._error ? `<div class="card error">${this._error}</div>` : "";
+    if (this._tab === "insights") return `${tabs}${err}${this._insights()}`;
+    return `${tabs}${err}${hero}${stats}${scanning}${this._form()}${this._activity()}`;
   }
 
   /** Turn a stored expense back into the form's fields. */
@@ -269,14 +339,14 @@ class FundSplitPanel extends HTMLElement {
     const rows = items.map((a) => {
       if (a.type === "settlement") {
         return `<li><div class="main"><div class="title">💸 ${this._name(a.from)} paid ${this._name(a.to)}</div>
-          <div class="meta">${a.date} · Settlement</div></div>
+          <div class="meta">${a.date} · Settlement${this._tag(a)}</div></div>
           <div class="amt"><span class="v">${rand(a.amount)}</span></div>
           <button class="edit" data-id="${a.id}" title="Edit" aria-label="Edit">✎</button>
           <button class="del" data-id="${a.id}" title="Delete" aria-label="Delete">✕</button></li>`;
       }
       const lent = a.amount - a.split[a.paid_by];
       return `<li><div class="main"><div class="title">${this._esc(a.description)}</div>
-        <div class="meta">${a.date} · ${this._name(a.paid_by)} paid${a.category ? " · " + this._esc(a.category) : ""}</div></div>
+        <div class="meta">${a.date} · ${this._name(a.paid_by)} paid${a.category ? " · " + this._esc(a.category) : ""}${this._tag(a)}</div></div>
         <div class="amt"><span class="v">${rand(a.amount)}</span><small>${this._name(a.paid_by)} lent ${rand(lent)}</small></div>
         <button class="edit" data-id="${a.id}" title="Edit" aria-label="Edit">✎</button>
         <button class="del" data-id="${a.id}" title="Delete" aria-label="Delete">✕</button></li>`;
@@ -284,10 +354,137 @@ class FundSplitPanel extends HTMLElement {
     return `<div class="card"><h2>Activity</h2><ul>${rows}</ul></div>`;
   }
 
+  _tag(a) {
+    return a.created_by ? ` <span class="tag">added by ${this._esc(a.created_by)}</span>` : "";
+  }
+
   _esc(str) {
     const d = document.createElement("div");
     d.textContent = str ?? "";
     return d.innerHTML;
+  }
+
+  // ---- insights --------------------------------------------------------
+
+  _personColor(id) { return this._state.members[0].id === id ? "var(--fs-p1)" : "var(--fs-p2)"; }
+
+  _stack(label, byMember, total) {
+    if (!total) return `<div class="stackrow"><div class="lab">${label}</div><div class="stack none"></div></div>`;
+    const segs = this._state.members.filter((m) => byMember[m.id] > 0).map((m) =>
+      `<div class="seg" tabindex="0" style="flex:${byMember[m.id]};background:${this._personColor(m.id)}"
+        data-tt="${this._esc(m.name)} · ${label.toLowerCase()}" data-tv="${rand(byMember[m.id])}"
+        data-ts="${pct(byMember[m.id], total)}% of ${rand(total)}"></div>`).join("");
+    return `<div class="stackrow"><div class="lab">${label}</div><div class="stack">${segs}</div></div>`;
+  }
+
+  _insights() {
+    const months = this._state.insights;
+    let i = months.findIndex((m) => m.month === this._month);
+    if (i < 0) i = months.length - 1;
+    const cur = months[i];
+    const prev = months[i - 1];
+    const members = this._state.members;
+
+    // Headline: this month's spend vs the one before.
+    let delta = "";
+    if (!cur.total) delta = "Nothing spent this month.";
+    else if (prev && prev.total) {
+      const change = Math.round(((cur.total - prev.total) / prev.total) * 100);
+      const arrow = change > 0 ? "▲" : change < 0 ? "▼" : "▬";
+      delta = `${arrow} ${Math.abs(change)}% vs ${monthName(prev.month, "short")} (${rand(prev.total)})`;
+    } else if (prev) delta = `Nothing was spent in ${monthName(prev.month, "short")}.`;
+    const hero = `<div class="card hero">
+      <div class="sub">Spent in ${monthName(cur.month)}</div>
+      <div class="big">${rand(cur.total)}</div>
+      <div class="delta">${delta}${cur.count ? ` · ${cur.count} expense${cur.count === 1 ? "" : "s"}` : ""}</div>
+    </div>`;
+
+    const nav = `<div class="monthnav">
+      <button id="mprev" aria-label="Previous month" ${i === 0 ? "disabled" : ""}>‹</button>
+      <b>${monthName(cur.month)}</b>
+      <button id="mnext" aria-label="Next month" ${i === months.length - 1 ? "disabled" : ""}>›</button>
+    </div>`;
+
+    // Who paid vs who's share it was.
+    const legend = members.map((m) => `<div class="item">
+        <span class="dot" style="background:${this._personColor(m.id)}"></span><span>${this._esc(m.name)}</span>
+        <small>paid ${rand(cur.paid[m.id])}</small><small>share ${rand(cur.share[m.id])}</small></div>`).join("");
+    const gaps = members.map((m) => ({ m, diff: cur.paid[m.id] - cur.share[m.id] })).sort((a, b) => b.diff - a.diff);
+    const note = cur.total && gaps[0].diff > 0
+      ? `${this._esc(gaps[0].m.name)} paid ${rand(gaps[0].diff)} more than their share.`
+      : cur.total ? "Everyone paid their share." : "";
+    const who = `<div class="card"><h2>Who paid</h2>
+      <div class="legend">${legend}</div>
+      ${this._stack("Paid", cur.paid, cur.total)}${this._stack("Share of costs", cur.share, cur.total)}
+      ${note ? `<p class="note">${note}</p>` : ""}</div>`;
+
+    // Categories, biggest first.
+    const cats = Object.entries(cur.by_category).sort((a, b) => b[1] - a[1]);
+    const top = cats.length ? cats[0][1] : 0;
+    const catRows = cats.map(([name, amt]) => `<div class="cat" tabindex="0" data-tt="${this._esc(name)}"
+        data-tv="${rand(amt)}" data-ts="${pct(amt, cur.total)}% of ${monthName(cur.month, "short")} spending">
+        <div class="top"><span>${this._esc(name)}</span><span>${rand(amt)} <small>${pct(amt, cur.total)}%</small></span></div>
+        <div class="track"><div class="fill" style="width:${(amt / top) * 100}%"></div></div></div>`).join("");
+    const catCard = `<div class="card"><h2>By category</h2>
+      ${cats.length ? `<div class="cats">${catRows}</div>` : `<div class="empty">No spending to break down.</div>`}</div>`;
+
+    // Last 12 months: selected month emphasised, the rest dimmed.
+    const max = Math.max(...months.map((m) => m.total), 1);
+    const last = months.length - 1;
+    const cols = months.map((m, k) => {
+      const sel = k === i;
+      const side = k <= 1 ? "l" : k >= last - 1 ? "r" : "c";
+      const h = (m.total / max) * 100;
+      return `<button class="col" data-month="${m.month}" aria-pressed="${sel}" aria-label="${monthName(m.month)}: ${rand(m.total)}"
+        data-tt="${monthName(m.month)}" data-tv="${rand(m.total)}" data-ts="${m.count} expense${m.count === 1 ? "" : "s"}">
+        ${sel && m.total ? `<span class="cap ${side}" style="bottom:calc(${h}% + 4px)">${rand(m.total)}</span>` : ""}
+        <div class="bar" style="height:${h}%"></div></button>`;
+    }).join("");
+    const labels = months.map((m) => `<span>${monthName(m.month, "short")}</span>`).join("");
+    const trend = `<div class="card"><h2>Last 12 months</h2>
+      <div class="chart">${cols}</div><div class="xlabels">${labels}</div></div>`;
+
+    // Table view: every value above is reachable without hovering.
+    const memberHeads = members.map((m) => `<th class="n">${this._esc(m.name)}</th>`).join("");
+    const monthRows = months.map((m) => `<tr><td>${monthName(m.month)}</td><td class="n">${rand(m.total)}</td>
+      ${members.map((x) => `<td class="n">${rand(m.paid[x.id])}</td>`).join("")}</tr>`).join("");
+    const table = `<div class="card"><details><summary>View as table</summary>
+      <table><tr><th>Month</th><th class="n">Total</th>${memberHeads}</tr>${monthRows}</table>
+      <table><tr><th>${monthName(cur.month)} category</th><th class="n">Amount</th></tr>
+      ${cats.map(([n, a]) => `<tr><td>${this._esc(n)}</td><td class="n">${rand(a)}</td></tr>`).join("")}</table>
+      </details></div>`;
+
+    return `${nav}${hero}${who}${catCard}${trend}${table}<div class="tip" hidden></div>`;
+  }
+
+  /** One shared tooltip for every [data-tt] mark; same content on hover and keyboard focus. */
+  _bindTips() {
+    const root = this.shadowRoot;
+    const tip = root.querySelector(".tip");
+    if (!tip) return;
+    const show = (el, x, y) => {
+      tip.replaceChildren();
+      const title = document.createElement("span");
+      title.textContent = el.dataset.tt;
+      const value = document.createElement("b");
+      value.textContent = el.dataset.tv;
+      const sub = document.createElement("span");
+      sub.textContent = el.dataset.ts || "";
+      tip.append(value, title, ...(el.dataset.ts ? [document.createElement("br"), sub] : []));
+      tip.hidden = false;
+      const w = tip.offsetWidth;
+      tip.style.left = `${Math.max(8, Math.min(x - w / 2, window.innerWidth - w - 8))}px`;
+      tip.style.top = `${Math.max(8, y - tip.offsetHeight - 12)}px`;
+    };
+    root.querySelectorAll("[data-tt]").forEach((el) => {
+      el.addEventListener("pointermove", (e) => show(el, e.clientX, e.clientY));
+      el.addEventListener("pointerleave", () => { tip.hidden = true; });
+      el.addEventListener("focus", () => {
+        const r = el.getBoundingClientRect();
+        show(el, r.left + r.width / 2, r.top);
+      });
+      el.addEventListener("blur", () => { tip.hidden = true; });
+    });
   }
 
   // ---- events ----------------------------------------------------------
@@ -300,6 +497,22 @@ class FundSplitPanel extends HTMLElement {
 
   _bind(draft) {
     const root = this.shadowRoot;
+    root.querySelectorAll("[data-tab]").forEach((b) =>
+      b.addEventListener("click", () => { this._tab = b.dataset.tab; this._render(); }));
+    if (this._tab === "insights") {
+      const months = this._state.insights;
+      const at = () => {
+        const k = months.findIndex((m) => m.month === this._month);
+        return k < 0 ? months.length - 1 : k;
+      };
+      const go = (k) => { this._month = months[Math.min(months.length - 1, Math.max(0, k))].month; this._render(); };
+      root.getElementById("mprev")?.addEventListener("click", () => go(at() - 1));
+      root.getElementById("mnext")?.addEventListener("click", () => go(at() + 1));
+      root.querySelectorAll(".col").forEach((c) =>
+        c.addEventListener("click", () => { this._month = c.dataset.month; this._render(); }));
+      this._bindTips();
+      return;
+    }
     root.getElementById("add")?.addEventListener("click", () => { this._showForm = true; this._render(); });
     root.getElementById("cancel")?.addEventListener("click", () => {
       this._showForm = false; this._prefill = null; this._editing = null; this._render();

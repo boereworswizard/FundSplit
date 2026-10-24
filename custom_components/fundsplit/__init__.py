@@ -76,8 +76,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     async def add_expense(call: ServiceCall) -> None:
         d = call.data
+        manager = get_manager(hass)
         await _run(
-            get_manager(hass).async_add_expense(
+            manager.async_add_expense(
                 description=d["description"],
                 amount=d["amount"],
                 paid_by=d["paid_by"],
@@ -85,6 +86,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 values=d.get("split_values"),
                 date=d.get("date"),
                 category=d.get("category"),
+                created_by=await manager.async_actor_name(call.context.user_id),
             )
         )
 
@@ -106,8 +108,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async def settle_up(call: ServiceCall) -> None:
         d = call.data
         manager = get_manager(hass)
+        actor = await manager.async_actor_name(call.context.user_id)
         if "amount" not in d:
-            await _run(manager.async_settle_all())
+            await _run(manager.async_settle_all(created_by=actor))
             return
         if "from" not in d or "to" not in d:
             raise ServiceValidationError("'from' and 'to' are required with 'amount'")
@@ -117,6 +120,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 to_member=d["to"],
                 amount=d["amount"],
                 date=d.get("date"),
+                created_by=actor,
             )
         )
 

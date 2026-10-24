@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0
+- New **Insights** tab: monthly spend with change vs the previous month, who paid vs whose share it was, spending by category, and a 12-month trend. Switch month with the arrows or by tapping a column. A "View as table" section shows every number.
+- Entries now show who added them (a "added by ..." tag): the household member linked to the HA user, else the HA user's name, or "Automation" for service calls with no user. Editing keeps the original author. Entries added before this update have no tag.
+- "Today" (default dates, this-month spend) now follows Home Assistant's timezone instead of the server clock.
+
 ## 0.3.3
 - Fixed the page scrolling sideways on mobile when a description is long; long text now wraps.
 

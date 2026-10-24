@@ -28,6 +28,12 @@ Requirements:
 * HA has a media folder (the default `/media` or `config/media`). The photo is saved there only for the scan and deleted straight after.
 * The panel must be opened over HTTPS (e.g. Nabu Casa) or in the HA companion app for the phone camera to work.
 
+## Insights
+
+The **Insights** tab shows, for any of the last 12 months: total spend and the change vs the month before,
+who paid versus whose share the costs were (e.g. "Sam paid R1 008,50 more than their share"), spending by
+category, and a 12-month trend. Settlements are not counted as spending.
+
 ## Entities
 
 | Entity | Meaning |

@@ -197,3 +197,80 @@ def test_update_settlement(lg):
     assert lg.settlements[0]["date"] == "2024-01-02"
     with pytest.raises(LedgerError):
         lg.update_settlement(st["id"], "a", "a", 5)
+
+
+# -- created_by ----------------------------------------------------------
+
+
+def test_created_by_is_stored_and_survives_edit(lg):
+    exp = lg.add_expense("Milk", 10, "a", created_by="Sam")
+    assert exp["created_by"] == "Sam"
+    updated = lg.update_expense(exp["id"], "Milk 2L", 12, "a")
+    assert updated["created_by"] == "Sam"  # editing never rewrites the author
+    st = lg.add_settlement("s", "a", 5, created_by="Automation")
+    assert lg.update_settlement(st["id"], "s", "a", 6)["created_by"] == "Automation"
+
+
+def test_created_by_defaults_to_none(lg):
+    assert lg.add_expense("Milk", 10, "a")["created_by"] is None
+
+
+# -- injectable "today" ---------------------------------------------------
+
+
+def _ledger_on(day):
+    from datetime import date
+
+    return Ledger(
+        [{"id": "a", "name": "Alex", "person": None}, {"id": "s", "name": "Sam", "person": None}],
+        today=lambda: date.fromisoformat(day),
+    )
+
+
+def test_default_date_uses_injected_today():
+    lg = _ledger_on("2026-03-15")
+    assert lg.add_expense("Milk", 10, "a")["date"] == "2026-03-15"
+    assert lg.add_settlement("s", "a", 5)["date"] == "2026-03-15"
+
+
+# -- insights ------------------------------------------------------------
+
+
+def test_insights_months_are_contiguous_and_roll_over_year():
+    lg = _ledger_on("2026-02-10")
+    months = [m["month"] for m in lg.insights(4)]
+    assert months == ["2025-11", "2025-12", "2026-01", "2026-02"]
+    assert len(_ledger_on("2026-10-01").insights()) == 12
+
+
+def test_insights_buckets_by_month_category_and_person():
+    lg = _ledger_on("2026-10-20")
+    lg.add_expense("Food", 100, "a", category="Groceries", date="2026-10-02")
+    lg.add_expense("Pizza", 50, "s", category="Eating out", date="2026-10-05")
+    lg.add_expense("Mystery", 20, "s", date="2026-10-06")  # no category
+    lg.add_expense("Last month", 200, "a", "shares", {"a": 0, "s": 1}, date="2026-09-30")
+    oct_, sep = lg.insights(2)[1], lg.insights(2)[0]
+    assert oct_["total"] == 17000 and oct_["count"] == 3
+    assert oct_["by_category"] == {"Groceries": 10000, "Eating out": 5000, "Uncategorised": 2000}
+    assert oct_["paid"] == {"a": 10000, "s": 7000}
+    assert oct_["share"] == {"a": 8500, "s": 8500}
+    assert sep["total"] == 20000
+    assert sep["paid"] == {"a": 20000, "s": 0}
+    assert sep["share"] == {"a": 0, "s": 20000}  # Sam's share of a "Sam owes all" bill
+
+
+def test_insights_ignore_settlements_deleted_and_out_of_range():
+    lg = _ledger_on("2026-10-20")
+    lg.add_settlement("s", "a", 500, date="2026-10-03")
+    gone = lg.add_expense("Oops", 80, "a", date="2026-10-04")
+    lg.delete(gone["id"])
+    lg.add_expense("Ancient", 90, "a", date="2020-01-01")
+    assert sum(m["total"] for m in lg.insights()) == 0
+
+
+def test_insights_in_snapshot_and_shares_sum_to_total():
+    lg = _ledger_on("2026-10-20")
+    lg.add_expense("Odd", "0.05", "a", date="2026-10-01")
+    snap = lg.snapshot()
+    month = snap["insights"][-1]
+    assert sum(month["share"].values()) == month["total"] == 5
